@@ -1,101 +1,3 @@
-/* ---------- TRANSLATOR ---------- */
-const tbarHtml=()=>`<div class='row' style='margin-top:12px'><select id='tlg' style='width:auto'>${LANGS.map(l=>`<option ${l===SET().tl?'selected':''}>${l}</option>`).join('')}</select><button class='btn g s' id='tbtn'>🌐 Translate</button><button class='btn g s' id='torig' style='display:none'>↩ Show original</button><span class='mut' id='tmsg'></span></div>`;
-function tbarBind(doT,doO){$('#tbtn').onclick=async()=>{const l=$('#tlg').value;$('#tbtn').disabled=true;$('#tmsg').textContent='Translating…';
-  try{await doT(l);const o=$('#torig'),m=$('#tmsg');if(o)o.style.display='inline-block';if(m)m.textContent=''}catch(e){const m=$('#tmsg');if(m)m.textContent=emsg(e)}
-  const b=$('#tbtn');if(b)b.disabled=false};$('#torig').onclick=doO}
-async function translate(sample,d,lang){
- if(d.qs&&d.qs.length){const out=[];
-  for(let i=0;i<d.qs.length;i+=12){const part=d.qs.slice(i,i+12).map(({q,type,choices,answer,alts,explain})=>({q,type,choices,answer,alts,explain}));
-   const r=await sample.json('Translate every text field of this quiz into '+lang+'. Keep the same JSON structure, the same order, the same "type" values and the same order of choices. The "answer" must be exactly equal to one of the translated choices (for "id" questions, the translated short answer). Return ONLY the JSON array. '+JSON.stringify(part),{cache:false});
-   const a=Array.isArray(r)?r:(r&&r.questions)||[];if(a.length!==part.length)throw new Error('the translation came back incomplete');out.push(...a)}
-  return {qs:out,text:qsText(out)}}
- const r=await sample('Translate this study material into '+lang+'. Keep the Markdown formatting. Output only the translation.\n\n'+d.text,{cache:false});return {text:r.text}}
-async function getSample(){const s=await claude.use('sample');if(!s)throw new Error('the AI is not available in this view. Open the published link on claude.ai');return s}
-
-function openItem(id){const it=items.find(i=>i.id===id);if(!it)return go('organizer');
- if(it.qs&&!it.S)it.S={ans:{},done:false};let d={text:it.content,qs:it.qs,S:it.S},tr=false;
- $('#view').innerHTML=`<button class="btn g s" id="bk">← Back</button><div class="card" style="margin-top:12px"><div class="row" style="justify-content:space-between"><h1 style="margin:0">${esc(it.title)}</h1><button class="btn g s" id="cp">Copy</button></div>${tbarHtml()}<div id="svt" style="display:none;margin-top:8px"><button class="btn s" id="svtb">💾 Save translation as a new item</button></div><hr style="border:0;border-top:1px solid var(--bd);margin:12px 0"><div class="out" id="qz"></div></div>`;
- const paint=()=>{if(d.qs)quiz($('#qz'),d.qs,d.S,tr?null:()=>saveItems());else $('#qz').innerHTML=md(d.text)};paint();
- $('#bk').onclick=()=>go('organizer');$('#cp').onclick=e=>copy(d.text,e.target);
- tbarBind(async l=>{const sm=await getSample(),r=await translate(sm,{text:it.content,qs:it.qs},l);d={text:r.text,qs:r.qs,S:{ans:{},done:false},lang:l};tr=true;$('#svt').style.display='block';paint()},
-  ()=>{d={text:it.content,qs:it.qs,S:it.S};tr=false;$('#svt').style.display='none';$('#torig').style.display='none';paint()});
- $('#svtb').onclick=e=>{items.unshift({...(d.qs?{qs:d.qs,S:{ans:{},done:false}}:{}),id:'i'+Date.now(),type:it.type,level:it.level,lang:d.lang,title:it.title+' ('+d.lang+')',content:d.text,at:Date.now()});saveItems();e.target.textContent='✓ Saved';e.target.disabled=true}}
-
-/* ---------- QUIZ WIDGET (answer, submit, see correct/wrong) ---------- */
-function qsText(qs){return qs.map((x,i)=>`${i+1}. ${x.q}`+(x.choices?'\n'+x.choices.map((c,j)=>`   ${'ABCD'[j]||j+1}. ${c}`).join('\n'):'')).join('\n\n')+'\n\nAnswer Key\n'+qs.map((x,i)=>`${i+1}. ${lt(x)} – ${x.explain||''}`).join('\n')}
-function quiz(el,qs,S,onSub,hide){
- const draw=()=>{
-  const sc=S.done?qs.filter((x,i)=>ok(x,S.ans[i])).length:0;
-  el.innerHTML=(S.done?`<div class='note' style='font-size:16px'><b>Score: ${sc}/${qs.length}</b> (${Math.round(sc/qs.length*100)}%) · ✅ ${sc} correct · ❌ ${qs.length-sc} wrong</div>`:'')+qs.map((x,i)=>{
-   const a=S.ans[i],r=S.done&&ok(x,a),ch=x.choices;let body;
-   if(!ch||x.type==='id')body=`<input data-a='${i}' value='${esc(a||'')}' placeholder='Type your answer…' ${S.done?'disabled':''}>`;
-   else body=ch.map((c,j)=>{const s=a===c,corr=S.done&&norm(c)===norm(x.answer);return `<label class='opt ${S.done?(corr?'ok':s?'bad':''):''}' style='display:flex;gap:8px;align-items:center;margin:4px 0;color:var(--tx);font-size:inherit'><input type='radio' style='width:auto' name='q${i}' data-a='${i}' value='${esc(c)}' ${s?'checked':''} ${S.done?'disabled':''}><b>${'ABCD'[j]||j+1}.</b> ${esc(c)}</label>`}).join('');
-   return <div class='card' style='margin:10px 0;${S.done?'border-color:'+(r?'var(--ok)':'var(--bad)'):''}'><b>${i+1}. ${esc(x.q)}</b><div style='margin-top:8px'>${body}</div>${S.done?`<div style='margin-top:8px'>${r?'✅ <b style="color:var(--ok)">Correct!</b>':'❌ <b style="color:var(--bad)">'+(a?'Wrong.':'No answer.')+'</b> Correct answer: <b>'+esc(lt(x))+'</b>'}<div class='mut'>${esc(x.explain||'')}</div></div>:''}</div>`}).join('')+
-  (qs.length&&!hide?`<div class='row'>${S.done?`<button class='btn g' data-re>🔄 Try again</button>`:`<button class='btn' data-sub>📨 Submit answers</button>`}</div>`:'');
-  el.querySelectorAll('[data-a]').forEach(n=>n.oninput=()=>{S.ans[n.dataset.a]=n.value;onSub&&onSub()});
-  const sb=el.querySelector('[data-sub]'),rb=el.querySelector('[data-re]');
-  if(sb)sb.onclick=()=>{S.done=true;onSub&&onSub();draw();el.scrollIntoView({block:'start'})};
-  if(rb)rb.onclick=()=>{S.ans={};S.done=false;onSub&&onSub();draw()};
- };draw()}
-
-/* ---------- GENERATOR ---------- */
-function gen(mode){const R=mode==='reviewer',S=SET();cur={mode,text:'',qs:[],S:{ans:{},done:false},title:'',level:'',lang:'',orig:null};
- $('#view').innerHTML=`<h1>${R?'📘 Reviewer Generator':'📝 Practice Question Generator'}</h1>
- <p class="mut">${R?'Enter a topic or upload your materials to generate a reviewer.':'Generate as many practice questions as you want, then answer them, submit, and see what you got right and wrong.'}</p>
- <div class="card"><label>Topic / notes</label><textarea id="tp" placeholder="e.g. Photosynthesis, Grade 11 General Mathematics – Functions…"></textarea>
- <label>Link (optional)</label><input id="lk" placeholder="https://…">
- <label>Upload materials</label>
- <div class="row">
-  <button class="btn g s" data-u="cam">📷 Take a photo</button><button class="btn g s" data-u="img">🖼️ Upload photo</button><button class="btn g s" data-u="vid">🎬 Video</button><button class="btn g s" data-u="aud">🎧 Audio</button><button class="btn g s" data-u="file">📄 Files</button>
- </div>
- <input type="file" id="f_cam" accept="image/*" capture="environment" hidden><input type="file" id="f_img" accept="image/*" multiple hidden><input type="file" id="f_vid" accept="video/*" hidden><input type="file" id="f_aud" accept="audio/*" hidden><input type="file" id="f_file" multiple hidden>
- <div class="chips" id="ch"></div>
- <div class="note">The AI can read photos and text files (.txt, .md, .csv). For video, audio, PDF, or Word files, also paste the transcript or notes above for the best results.</div>
- ${R?`<label>Style</label>${sel('sty',STY,S.sty)}`
- :`<div class="row"><div style="flex:1;min-width:140px"><label>Number of questions (no limit)</label><input id="nq" type="number" min="1" value="${S.nq}"></div><div style="flex:2;min-width:180px"><label>Question type</label>${sel('ty',TYP,S.ty)}</div><div style="flex:1;min-width:140px"><label>Level</label>${sel('df',DIF,S.df)}</div></div>`}
- <div class="row" style="margin-top:16px"><button class="btn" id="run">✨ Generate</button></div><div class="err" id="ge"></div></div>
- <div class="card" id="res" style="margin-top:14px;display:none"></div>`;
- $$('[data-u]').forEach(b=>b.onclick=()=>$('#f_'+b.dataset.u).click());
- $$('input[type=file]').forEach(f=>f.onchange=()=>{[...f.files].forEach(x=>att.push({k:f.id.slice(2),f:x}));f.value='';chips()});
- $('#run').onclick=()=>run(false)}
-function chips(){$('#ch').innerHTML=att.map((a,i)=>`<span class="chip">${{cam:'📷',img:'🖼️',vid:'🎬',aud:'🎧',file:'📄'}[a.k]} ${esc(a.f.name||'photo')} <b data-x="${i}" style="cursor:pointer">✕</b></span>`).join('');$$('[data-x]').forEach(x=>x.onclick=()=>{att.splice(+x.dataset.x,1);chips()})}
-async function readText(f){return new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(String(fr.result).slice(0,30000));fr.onerror=()=>r('');fr.readAsText(f)})}
-async function run(more){
- const ge=$('#ge');ge.textContent='';let sample;try{sample=await getSample()}catch(e){ge.textContent=emsg(e);return}
- const R=cur.mode==='reviewer',tp=$('#tp').value.trim(),lk=$('#lk').value.trim();
- if(!tp&&!lk&&!att.length&&!more){ge.textContent='Enter a topic, add a link, or upload something first.';return}
- let ctx='',imgs=[];
- if(tp)ctx+='Topic/notes from student:\n'+tp+'\n\n';
- if(lk)ctx+='Link provided (you cannot open it; use it only as a hint about the topic): '+lk+'\n\n';
- const lim=await sample.limits().catch(()=>({}));
- for(const a of att){
-  if(a.f.type.startsWith('image/')){if(lim.images&&imgs.length<4)imgs.push(a.f);else ctx+='[Image '+a.f.name+' could not be attached]\n'}
-  else if(/^(text\/|application\/json)/.test(a.f.type)||/\.(txt|md|csv|json)$/i.test(a.f.name))ctx+='File "'+a.f.name+'":\n'+await readText(a.f)+'\n\n';
-  else ctx+='[Attached '+a.k+' file named "'+a.f.name+'" – its content is not readable; rely on the student’s notes/topic.]\n'}
- if(more&&cur.orig){cur.text=cur.orig.text;cur.qs=cur.orig.qs||[];cur.orig=null;cur.lang=''}
- const res=$('#res');res.style.display='block';$('#run').disabled=true;
- if(!more){cur.text='';cur.qs=[];cur.S={ans:{},done:false};cur.orig=null;cur.lang='';cur.title=(tp.split('\n')[0]||lk||(att[0]&&att[0].f.name)||'Untitled').slice(0,50)}
- else cur.S.done=false;
- const paint=busy=>{if(R)$('#qz').innerHTML=md(cur.text);else quiz($('#qz'),cur.qs,cur.S,null,busy)};
- const show=busy=>{res.innerHTML=`<div class="row" style="justify-content:space-between"><h2 style="margin:0">${R?'Your reviewer':'Your practice quiz'}${!R&&cur.level?' · '+cur.level:''}${cur.lang?' · '+esc(cur.lang):''}</h2>${busy?'<span class="mut">Generating…</span>':`<div class="row"><button class="btn s" id="sv">💾 Save</button><button class="btn g s" id="cpy">Copy</button>${R?'':'<button class="btn g s" id="more">➕ Generate more</button>'}</div>`}</div>${busy?'':tbarHtml()}<div id="qz" class="out" style="margin-top:10px"></div>`;
-  paint(busy);
-  if(!busy){$('#sv').onclick=save;$('#cpy').onclick=e=>copy(cur.text,e.target);if(!R)$('#more').onclick=()=>run(true);
-   tbarBind(async l=>{const sm=await getSample(),o=cur.orig||{text:cur.text,qs:JSON.parse(JSON.stringify(cur.qs||[]))},r=await translate(sm,o,l);cur.orig=o;cur.text=r.text;if(r.qs){cur.qs=r.qs;cur.S={ans:{},done:false}}cur.lang=l;show(false)},
-    ()=>{cur.text=cur.orig.text;if(cur.orig.qs&&!R){cur.qs=cur.orig.qs;cur.S={ans:{},done:false}}cur.orig=null;cur.lang='';show(false)});
-   if(cur.orig)$('#torig').style.display='inline-block'}};
- try{
-  if(R){await sample(SYS+'\n\n'+ctx+'Create a reviewer in this style: '+$('#sty').value+'. Include a title, key concepts with simple definitions, examples, memory tips, and a short self-check at the end.',{images:imgs,cache:false,onText:({text})=>{cur.text=text;show(true)}})}
-  else{const n=Math.max(1,parseInt($('#nq').value)||10),ty=$('#ty').value,df=$('#df').value;cur.level=df;let done=0,tries=0;
-   while(done<n&&tries++<n+3){const c=Math.min(10,n-done),prev=cur.qs.slice(-40).map(x=>x.q).join(' | ').slice(-2500);
-    const p=SYS+'\n\n'+ctx+(prev?'Already written (do NOT repeat): '+prev+'\n\n':'')+`Write exactly ${c} new practice questions. Type: ${ty}. Level: ${LV[df]}. Make the correct choice land on a random letter (do not favor A). Return ONLY a JSON array (no markdown fences, no extra text). Each item: {"q":"question","type":"mc" or "tf" or "id","choices":[exactly 4 options for mc, without letter prefixes; omit for tf and id],"answer":"exact text of the correct choice (True or False for tf; the short answer for id)","alts":[acceptable alternative answers, id only],"explain":"1-2 sentence explanation"}`;
-    const r=await sample.json(p,{images:imgs,cache:false}),arr=(Array.isArray(r)?r:(r&&r.questions)||[]).map(fix).filter(Boolean);
-    cur.qs.push(...arr);done+=arr.length;cur.text=qsText(cur.qs);show(true)}}
-  show(false)
- }catch(e){ge.textContent=emsg(e);if(cur.text||cur.qs.length)show(false)}
- $('#run').disabled=false}
-function save(){const b=$('#sv'),R=cur.mode==='reviewer';
- items.unshift({id:'i'+Date.now(),type:cur.mode,title:(R?'Reviewer – ':'Practice – ')+cur.title+(cur.lang?' ('+cur.lang+')':''),content:cur.text,at:Date.now(),level:R?'':cur.level,lang:cur.lang,...(R?{}:{qs:JSON.parse(JSON.stringify(cur.qs)),S:JSON.parse(JSON.stringify(cur.S))})});
- saveItems();b.textContent='✓ Saved to Organizer';b.disabled=true}
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -189,7 +91,8 @@ input[type=color]{width:46px;height:36px;padding:2px}
  </main>
 </div>
 
-<script> const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+<script>
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const mem={};
 const st={get(k,d){try{const v=localStorage.getItem(k);if(v!==null)return JSON.parse(v)}catch(e){}return k in mem?mem[k]:d},set(k,v){mem[k]=v;try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -225,7 +128,8 @@ let U=null,items=[],recents=[],view='dash',att=[],cur={},chat=[];
 const K=k=>k+'_'+U;
 const saveItems=()=>st.set(K('rak_items'),items);
 async function hash(s){try{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}catch(e){return btoa(unescape(encodeURIComponent(s)))}}
-  /* ---------- constants & settings ---------- */
+
+/* ---------- constants & settings ---------- */
 const LANGS=['English','Filipino','Taglish (Tagalog-English)','Ilocano','Kapampangan','Cebuano','Spanish','French','German','Japanese','Korean','Chinese (Simplified)','Arabic'];
 const STY=['Full reviewer (concepts, examples, summary)','Quick cheat sheet','Flashcard-style Q&A','Mnemonics & memory tricks'];
 const TYP=['Mixed (multiple choice, true/false, identification)','Multiple choice','True or False','Identification'];
@@ -260,7 +164,8 @@ function enter(e){U=e;items=st.get(K('rak_items'),[])||[];recents=st.get(K('rak_
  $('#auth').style.display='none';$('#app').classList.add('show');
  $('#who').textContent=((st.get('rak_users',{})||{})[e]||{}).name||e;go('dash')}
 $('#out').onclick=()=>{clearInterval(TM);st.set('rak_session',null);U=null;$('#app').classList.remove('show');$('#auth').style.display='grid';$('#pw').value=''};
-  /* ---------- NAV ---------- */
+
+/* ---------- NAV ---------- */
 function go(v,arg){clearInterval(TM);applyAll();view=v;att=[];
  $$('.nav[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===(v==='item'?'organizer':v)));
  $('#side').classList.remove('open');$('#rec').style.display='none';
@@ -296,7 +201,7 @@ function dash(){const nm=(((st.get('rak_users',{})||{})[U]||{}).name||'').split(
  $$('[data-g]').forEach(c=>c.onclick=()=>go(c.dataset.g));$$('[data-s]').forEach(c=>c.onclick=()=>{q.value=c.dataset.s;go('search',c.dataset.s)});bindItems()}
 
 /* ---------- ITEMS / ORGANIZER ---------- */
-function itemRow(i){return <div class="item" data-id="${i.id}"><div style="min-width:0;flex:1"><span class="badge ${i.type==='practice'?'p':''}">${i.type==='practice'?'Practice':'Reviewer'}</span>${i.level?`<span class="badge l">${esc(i.level)}</span>:''}${i.lang?`<span class="badge">${esc(i.lang)}</span>`:''}<span class="tt" data-open="${i.id}" style="cursor:pointer;font-weight:600">${esc(i.title)}</span><div class="mut" style="font-size:12px">${new Date(i.at).toLocaleString()}</div></div>
+function itemRow(i){return `<div class="item" data-id="${i.id}"><div style="min-width:0;flex:1"><span class="badge ${i.type==='practice'?'p':''}">${i.type==='practice'?'Practice':'Reviewer'}</span>${i.level?`<span class="badge l">${esc(i.level)}</span>`:''}${i.lang?`<span class="badge">${esc(i.lang)}</span>`:''}<span class="tt" data-open="${i.id}" style="cursor:pointer;font-weight:600">${esc(i.title)}</span><div class="mut" style="font-size:12px">${new Date(i.at).toLocaleString()}</div></div>
  <div class="row"><button class="btn g s" data-open="${i.id}">Open</button><button class="btn g s" data-ren="${i.id}">✏️ Rename</button><button class="btn g s" data-cp="${i.id}">Copy</button><button class="btn d s" data-del="${i.id}">Delete</button></div></div>`}
 function bindItems(){
  $$('[data-open]').forEach(b=>b.onclick=()=>go('item',b.dataset.open));
@@ -313,7 +218,107 @@ function org(tab){tab=tab||'all';const f=items.filter(i=>tab==='all'||i.type===t
  <div class="tabs" style="max-width:480px">${[['all','All ('+items.length+')'],['reviewer','Reviewers ('+items.filter(i=>i.type==='reviewer').length+')'],['practice','Practice ('+items.filter(i=>i.type==='practice').length+')']].map(t=>`<button class="${t[0]===tab?'on':''}" data-t="${t[0]}">${t[1]}</button>`).join('')}</div>
  <div class="card">${f.length?f.map(itemRow).join(''):'<p class="mut">Nothing here yet.</p>'}</div>`;
  $$('[data-t]').forEach(b=>b.onclick=()=>org(b.dataset.t));bindItems()}
-     /* ---------- AI AGENT ---------- */
+
+/* ---------- TRANSLATOR ---------- */
+const tbarHtml=()=>`<div class='row' style='margin-top:12px'><select id='tlg' style='width:auto'>${LANGS.map(l=>`<option ${l===SET().tl?'selected':''}>${l}</option>`).join('')}</select><button class='btn g s' id='tbtn'>🌐 Translate</button><button class='btn g s' id='torig' style='display:none'>↩ Show original</button><span class='mut' id='tmsg'></span></div>`;
+function tbarBind(doT,doO){$('#tbtn').onclick=async()=>{const l=$('#tlg').value;$('#tbtn').disabled=true;$('#tmsg').textContent='Translating…';
+  try{await doT(l);const o=$('#torig'),m=$('#tmsg');if(o)o.style.display='inline-block';if(m)m.textContent=''}catch(e){const m=$('#tmsg');if(m)m.textContent=emsg(e)}
+  const b=$('#tbtn');if(b)b.disabled=false};$('#torig').onclick=doO}
+async function translate(sample,d,lang){
+ if(d.qs&&d.qs.length){const out=[];
+  for(let i=0;i<d.qs.length;i+=12){const part=d.qs.slice(i,i+12).map(({q,type,choices,answer,alts,explain})=>({q,type,choices,answer,alts,explain}));
+   const r=await sample.json('Translate every text field of this quiz into '+lang+'. Keep the same JSON structure, the same order, the same "type" values and the same order of choices. The "answer" must be exactly equal to one of the translated choices (for "id" questions, the translated short answer). Return ONLY the JSON array. '+JSON.stringify(part),{cache:false});
+   const a=Array.isArray(r)?r:(r&&r.questions)||[];if(a.length!==part.length)throw new Error('the translation came back incomplete');out.push(...a)}
+  return {qs:out,text:qsText(out)}}
+ const r=await sample('Translate this study material into '+lang+'. Keep the Markdown formatting. Output only the translation.\n\n'+d.text,{cache:false});return {text:r.text}}
+async function getSample(){const s=await claude.use('sample');if(!s)throw new Error('the AI is not available in this view. Open the published link on claude.ai');return s}
+
+function openItem(id){const it=items.find(i=>i.id===id);if(!it)return go('organizer');
+ if(it.qs&&!it.S)it.S={ans:{},done:false};let d={text:it.content,qs:it.qs,S:it.S},tr=false;
+ $('#view').innerHTML=`<button class="btn g s" id="bk">← Back</button><div class="card" style="margin-top:12px"><div class="row" style="justify-content:space-between"><h1 style="margin:0">${esc(it.title)}</h1><button class="btn g s" id="cp">Copy</button></div>${tbarHtml()}<div id="svt" style="display:none;margin-top:8px"><button class="btn s" id="svtb">💾 Save translation as a new item</button></div><hr style="border:0;border-top:1px solid var(--bd);margin:12px 0"><div class="out" id="qz"></div></div>`;
+ const paint=()=>{if(d.qs)quiz($('#qz'),d.qs,d.S,tr?null:()=>saveItems());else $('#qz').innerHTML=md(d.text)};paint();
+ $('#bk').onclick=()=>go('organizer');$('#cp').onclick=e=>copy(d.text,e.target);
+ tbarBind(async l=>{const sm=await getSample(),r=await translate(sm,{text:it.content,qs:it.qs},l);d={text:r.text,qs:r.qs,S:{ans:{},done:false},lang:l};tr=true;$('#svt').style.display='block';paint()},
+  ()=>{d={text:it.content,qs:it.qs,S:it.S};tr=false;$('#svt').style.display='none';$('#torig').style.display='none';paint()});
+ $('#svtb').onclick=e=>{items.unshift({...(d.qs?{qs:d.qs,S:{ans:{},done:false}}:{}),id:'i'+Date.now(),type:it.type,level:it.level,lang:d.lang,title:it.title+' ('+d.lang+')',content:d.text,at:Date.now()});saveItems();e.target.textContent='✓ Saved';e.target.disabled=true}}
+
+/* ---------- QUIZ WIDGET (answer, submit, see correct/wrong) ---------- */
+function qsText(qs){return qs.map((x,i)=>`${i+1}. ${x.q}`+(x.choices?'\n'+x.choices.map((c,j)=>`   ${'ABCD'[j]||j+1}. ${c}`).join('\n'):'')).join('\n\n')+'\n\nAnswer Key\n'+qs.map((x,i)=>`${i+1}. ${lt(x)} – ${x.explain||''}`).join('\n')}
+function quiz(el,qs,S,onSub,hide){
+ const draw=()=>{
+  const sc=S.done?qs.filter((x,i)=>ok(x,S.ans[i])).length:0;
+  el.innerHTML=(S.done?`<div class='note' style='font-size:16px'><b>Score: ${sc}/${qs.length}</b> (${Math.round(sc/qs.length*100)}%) · ✅ ${sc} correct · ❌ ${qs.length-sc} wrong</div>`:'')+qs.map((x,i)=>{
+   const a=S.ans[i],r=S.done&&ok(x,a),ch=x.choices;let body;
+   if(!ch||x.type==='id')body=`<input data-a='${i}' value='${esc(a||'')}' placeholder='Type your answer…' ${S.done?'disabled':''}>`;
+   else body=ch.map((c,j)=>{const s=a===c,corr=S.done&&norm(c)===norm(x.answer);return `<label class='opt ${S.done?(corr?'ok':s?'bad':''):''}' style='display:flex;gap:8px;align-items:center;margin:4px 0;color:var(--tx);font-size:inherit'><input type='radio' style='width:auto' name='q${i}' data-a='${i}' value='${esc(c)}' ${s?'checked':''} ${S.done?'disabled':''}><b>${'ABCD'[j]||j+1}.</b> ${esc(c)}</label>`}).join('');
+   return `<div class='card' style='margin:10px 0;${S.done?'border-color:'+(r?'var(--ok)':'var(--bad)'):''}'><b>${i+1}. ${esc(x.q)}</b><div style='margin-top:8px'>${body}</div>${S.done?`<div style='margin-top:8px'>${r?'✅ <b style="color:var(--ok)">Correct!</b>':'❌ <b style="color:var(--bad)">'+(a?'Wrong.':'No answer.')+'</b> Correct answer: <b>'+esc(lt(x))+'</b>'}<div class='mut'>${esc(x.explain||'')}</div></div>`:''}</div>`}).join('')+
+  (qs.length&&!hide?`<div class='row'>${S.done?`<button class='btn g' data-re>🔄 Try again</button>`:`<button class='btn' data-sub>📨 Submit answers</button>`}</div>`:'');
+  el.querySelectorAll('[data-a]').forEach(n=>n.oninput=()=>{S.ans[n.dataset.a]=n.value;onSub&&onSub()});
+  const sb=el.querySelector('[data-sub]'),rb=el.querySelector('[data-re]');
+  if(sb)sb.onclick=()=>{S.done=true;onSub&&onSub();draw();el.scrollIntoView({block:'start'})};
+  if(rb)rb.onclick=()=>{S.ans={};S.done=false;onSub&&onSub();draw()};
+ };draw()}
+
+/* ---------- GENERATOR ---------- */
+function gen(mode){const R=mode==='reviewer',S=SET();cur={mode,text:'',qs:[],S:{ans:{},done:false},title:'',level:'',lang:'',orig:null};
+ $('#view').innerHTML=`<h1>${R?'📘 Reviewer Generator':'📝 Practice Question Generator'}</h1>
+ <p class="mut">${R?'Enter a topic or upload your materials to generate a reviewer.':'Generate as many practice questions as you want, then answer them, submit, and see what you got right and wrong.'}</p>
+ <div class="card"><label>Topic / notes</label><textarea id="tp" placeholder="e.g. Photosynthesis, Grade 11 General Mathematics – Functions…"></textarea>
+ <label>Link (optional)</label><input id="lk" placeholder="https://…">
+ <label>Upload materials</label>
+ <div class="row">
+  <button class="btn g s" data-u="cam">📷 Take a photo</button><button class="btn g s" data-u="img">🖼️ Upload photo</button><button class="btn g s" data-u="vid">🎬 Video</button><button class="btn g s" data-u="aud">🎧 Audio</button><button class="btn g s" data-u="file">📄 Files</button>
+ </div>
+ <input type="file" id="f_cam" accept="image/*" capture="environment" hidden><input type="file" id="f_img" accept="image/*" multiple hidden><input type="file" id="f_vid" accept="video/*" hidden><input type="file" id="f_aud" accept="audio/*" hidden><input type="file" id="f_file" multiple hidden>
+ <div class="chips" id="ch"></div>
+ <div class="note">The AI can read photos and text files (.txt, .md, .csv). For video, audio, PDF, or Word files, also paste the transcript or notes above for the best results.</div>
+ ${R?`<label>Style</label>${sel('sty',STY,S.sty)}`
+ :`<div class="row"><div style="flex:1;min-width:140px"><label>Number of questions (no limit)</label><input id="nq" type="number" min="1" value="${S.nq}"></div><div style="flex:2;min-width:180px"><label>Question type</label>${sel('ty',TYP,S.ty)}</div><div style="flex:1;min-width:140px"><label>Level</label>${sel('df',DIF,S.df)}</div></div>`}
+ <div class="row" style="margin-top:16px"><button class="btn" id="run">✨ Generate</button></div><div class="err" id="ge"></div></div>
+ <div class="card" id="res" style="margin-top:14px;display:none"></div>`;
+ $$('[data-u]').forEach(b=>b.onclick=()=>$('#f_'+b.dataset.u).click());
+ $$('input[type=file]').forEach(f=>f.onchange=()=>{[...f.files].forEach(x=>att.push({k:f.id.slice(2),f:x}));f.value='';chips()});
+ $('#run').onclick=()=>run(false)}
+function chips(){$('#ch').innerHTML=att.map((a,i)=>`<span class="chip">${{cam:'📷',img:'🖼️',vid:'🎬',aud:'🎧',file:'📄'}[a.k]} ${esc(a.f.name||'photo')} <b data-x="${i}" style="cursor:pointer">✕</b></span>`).join('');$$('[data-x]').forEach(x=>x.onclick=()=>{att.splice(+x.dataset.x,1);chips()})}
+async function readText(f){return new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(String(fr.result).slice(0,30000));fr.onerror=()=>r('');fr.readAsText(f)})}
+async function run(more){
+ const ge=$('#ge');ge.textContent='';let sample;try{sample=await getSample()}catch(e){ge.textContent=emsg(e);return}
+ const R=cur.mode==='reviewer',tp=$('#tp').value.trim(),lk=$('#lk').value.trim();
+ if(!tp&&!lk&&!att.length&&!more){ge.textContent='Enter a topic, add a link, or upload something first.';return}
+ let ctx='',imgs=[];
+ if(tp)ctx+='Topic/notes from student:\n'+tp+'\n\n';
+ if(lk)ctx+='Link provided (you cannot open it; use it only as a hint about the topic): '+lk+'\n\n';
+ const lim=await sample.limits().catch(()=>({}));
+ for(const a of att){
+  if(a.f.type.startsWith('image/')){if(lim.images&&imgs.length<4)imgs.push(a.f);else ctx+='[Image '+a.f.name+' could not be attached]\n'}
+  else if(/^(text\/|application\/json)/.test(a.f.type)||/\.(txt|md|csv|json)$/i.test(a.f.name))ctx+='File "'+a.f.name+'":\n'+await readText(a.f)+'\n\n';
+  else ctx+='[Attached '+a.k+' file named "'+a.f.name+'" – its content is not readable; rely on the student’s notes/topic.]\n'}
+ if(more&&cur.orig){cur.text=cur.orig.text;cur.qs=cur.orig.qs||[];cur.orig=null;cur.lang=''}
+ const res=$('#res');res.style.display='block';$('#run').disabled=true;
+ if(!more){cur.text='';cur.qs=[];cur.S={ans:{},done:false};cur.orig=null;cur.lang='';cur.title=(tp.split('\n')[0]||lk||(att[0]&&att[0].f.name)||'Untitled').slice(0,50)}
+ else cur.S.done=false;
+ const paint=busy=>{if(R)$('#qz').innerHTML=md(cur.text);else quiz($('#qz'),cur.qs,cur.S,null,busy)};
+ const show=busy=>{res.innerHTML=`<div class="row" style="justify-content:space-between"><h2 style="margin:0">${R?'Your reviewer':'Your practice quiz'}${!R&&cur.level?' · '+cur.level:''}${cur.lang?' · '+esc(cur.lang):''}</h2>${busy?'<span class="mut">Generating…</span>':`<div class="row"><button class="btn s" id="sv">💾 Save</button><button class="btn g s" id="cpy">Copy</button>${R?'':'<button class="btn g s" id="more">➕ Generate more</button>'}</div>`}</div>${busy?'':tbarHtml()}<div id="qz" class="out" style="margin-top:10px"></div>`;
+  paint(busy);
+  if(!busy){$('#sv').onclick=save;$('#cpy').onclick=e=>copy(cur.text,e.target);if(!R)$('#more').onclick=()=>run(true);
+   tbarBind(async l=>{const sm=await getSample(),o=cur.orig||{text:cur.text,qs:JSON.parse(JSON.stringify(cur.qs||[]))},r=await translate(sm,o,l);cur.orig=o;cur.text=r.text;if(r.qs){cur.qs=r.qs;cur.S={ans:{},done:false}}cur.lang=l;show(false)},
+    ()=>{cur.text=cur.orig.text;if(cur.orig.qs&&!R){cur.qs=cur.orig.qs;cur.S={ans:{},done:false}}cur.orig=null;cur.lang='';show(false)});
+   if(cur.orig)$('#torig').style.display='inline-block'}};
+ try{
+  if(R){await sample(SYS+'\n\n'+ctx+'Create a reviewer in this style: '+$('#sty').value+'. Include a title, key concepts with simple definitions, examples, memory tips, and a short self-check at the end.',{images:imgs,cache:false,onText:({text})=>{cur.text=text;show(true)}})}
+  else{const n=Math.max(1,parseInt($('#nq').value)||10),ty=$('#ty').value,df=$('#df').value;cur.level=df;let done=0,tries=0;
+   while(done<n&&tries++<n+3){const c=Math.min(10,n-done),prev=cur.qs.slice(-40).map(x=>x.q).join(' | ').slice(-2500);
+    const p=SYS+'\n\n'+ctx+(prev?'Already written (do NOT repeat): '+prev+'\n\n':'')+`Write exactly ${c} new practice questions. Type: ${ty}. Level: ${LV[df]}. Make the correct choice land on a random letter (do not favor A). Return ONLY a JSON array (no markdown fences, no extra text). Each item: {"q":"question","type":"mc" or "tf" or "id","choices":[exactly 4 options for mc, without letter prefixes; omit for tf and id],"answer":"exact text of the correct choice (True or False for tf; the short answer for id)","alts":[acceptable alternative answers, id only],"explain":"1-2 sentence explanation"}`;
+    const r=await sample.json(p,{images:imgs,cache:false}),arr=(Array.isArray(r)?r:(r&&r.questions)||[]).map(fix).filter(Boolean);
+    cur.qs.push(...arr);done+=arr.length;cur.text=qsText(cur.qs);show(true)}}
+  show(false)
+ }catch(e){ge.textContent=emsg(e);if(cur.text||cur.qs.length)show(false)}
+ $('#run').disabled=false}
+function save(){const b=$('#sv'),R=cur.mode==='reviewer';
+ items.unshift({id:'i'+Date.now(),type:cur.mode,title:(R?'Reviewer – ':'Practice – ')+cur.title+(cur.lang?' ('+cur.lang+')':''),content:cur.text,at:Date.now(),level:R?'':cur.level,lang:cur.lang,...(R?{}:{qs:JSON.parse(JSON.stringify(cur.qs)),S:JSON.parse(JSON.stringify(cur.S))})});
+ saveItems();b.textContent='✓ Saved to Organizer';b.disabled=true}
+
+/* ---------- AI AGENT ---------- */
 function agent(){
  $('#view').innerHTML=`<h1>🤖 RAK AI Agent</h1><p class="mut">Ask about lessons, homework help, or study tips.</p>
  <div class="card"><div class="chat" id="cb">${chat.length?'':'<div class="msg a">Hi! I’m RAK. What would you like to study today?</div>'}${chat.map(m=>`<div class="msg ${m.role==='user'?'u':'a'}">${m.role==='user'?esc(m.content):md(m.content)}</div>`).join('')}</div>
@@ -376,7 +381,7 @@ async function startGame(){const ge=$('#gerr'),src=$('#gs').value,lv=$('#glv').v
  if(src==='new'){topic=$('#gtp').value.trim();if(!topic)return ge.textContent='Please enter a topic.';
   let sample;try{sample=await getSample()}catch(e){return ge.textContent=emsg(e)}
   const n=Math.max(3,parseInt($('#gn').value)||10);$('#gb').disabled=true;ge.textContent='Generating questions…';let tries=0;
-  try{while(qs.length<n&&tries++<n){const c=Math.min(10,n-qs.length),r=await sample.json(SYS+' Topic: '+topic+'. Write '+c+' multiple-choice questions with exactly 4 choices each for a review game. Level: '+LV[lv]+'. Put the correct choice on a random letter.'+(qs.length?' Do NOT repeat: '+qs.map(x=>x.q).join(' | ').slice(-2000):'')+' Return ONLY a JSON array of objects like {"q":"question","type":"mc","choices"🙁"a","b","c","d"],"answer":"exact text of the correct choice","explain":"short explanation"}.',{cache:false});
+  try{while(qs.length<n&&tries++<n){const c=Math.min(10,n-qs.length),r=await sample.json(SYS+' Topic: '+topic+'. Write '+c+' multiple-choice questions with exactly 4 choices each for a review game. Level: '+LV[lv]+'. Put the correct choice on a random letter.'+(qs.length?' Do NOT repeat: '+qs.map(x=>x.q).join(' | ').slice(-2000):'')+' Return ONLY a JSON array of objects like {"q":"question","type":"mc","choices":["a","b","c","d"],"answer":"exact text of the correct choice","explain":"short explanation"}.',{cache:false});
    qs.push(...(Array.isArray(r)?r:(r&&r.questions)||[]).map(x=>{if(x)x.type='mc';return fix(x)}).filter(Boolean))}}
   catch(e){ge.textContent=emsg(e);if(qs.length<3){$('#gb').disabled=false;return}}}
  else{const it=items.find(i=>i.id===src);topic=it.title;qs=it.qs.filter(x=>x.choices&&x.type!=='id').map(reshuf)}
@@ -436,4 +441,5 @@ function cards(){clearInterval(TM);if(G.pos>=G.deck.length)return fcEnd();const 
 function fcEnd(){const m=G.missed.length;$('#view').innerHTML=`<div class='card' style='text-align:center'><div style='font-size:48px'>🎉</div><h1>Deck complete!</h1><p>✅ Known: <b>${G.known}</b> · ❌ Review again: <b>${m}</b></p><div class='row' style='justify-content:center'>${m?`<button class='btn' id='rm'>Review missed (${m})</button>`:''}<button class='btn g' id='bk2'>Back to Games</button></div></div>`;$('#bk2').onclick=()=>go('games');if(m)$('#rm').onclick=()=>{G.deck=G.missed;G.missed=[];G.pos=0;cards()}}
 
 /* ---------- BOOT ---------- */
-const s0
+const s0=st.get('rak_session',null);if(s0&&(st.get('rak_users',{})||{})[s0])enter(s0);
+</script></body></html>
